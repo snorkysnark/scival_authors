@@ -134,6 +134,11 @@ class AuthorsPipeline(Pipeline):
                 table=self.outputof("defined_author_count"),
                 sql=folder().joinpath("./func/rank_pairs.sql").read_text(),
             ),
+            "rank_sum": AddColumnsSql(
+                table=self.outputof("publications"),
+                sql=folder().joinpath("./func/rank_sum.sql").read_text(),
+                params={"pairs": self.outputof("rank_authors")},
+            ),
         }
 
 
