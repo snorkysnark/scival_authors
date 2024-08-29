@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "scival-authors"
+version = "0.1.0"
+description = ""
+authors = ["snorkysnark <snorkysnark@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+ralsei = {path = "/home/lisk/Code/ralsei/ralsei", develop = true}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
