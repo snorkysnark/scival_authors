@@ -2,3 +2,8 @@
 
 /data
 *.sqlite
+*.xlsx
+.ipynb_checkpoints
+
+*.dot
+*.dot.png
