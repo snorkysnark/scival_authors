@@ -19,5 +19,6 @@ def openalex_split(json_str: str):
     for result in json.loads(json_str)["results"]:
         yield {
             "doi": result["doi"].replace("https://doi.org/", ""),
+            "openalex": result["ids"]["openalex"].replace("https://openalex.org/", ""),
             "json": json.dumps(result),
         }

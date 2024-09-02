@@ -26,6 +26,7 @@ from func.padded_csv import HeaderLength, header_length_arg, padded_csv_lines
 from func.field_map import authors_fields, publication_fields
 from func.split_authors import split_authors
 from func.openalex_download import openalex_download, openalex_split
+from func.csml import CsmlPipeline
 
 
 def check_null(value: Any):
@@ -183,6 +184,7 @@ class AuthorsPipeline(Pipeline):
                     table=Table("openalex_jsons"),
                     columns=[
                         ValueColumn("doi", "TEXT"),
+                        ValueColumn("openalex", "TEXT"),
                         ValueColumn("json", "TEXT"),
                     ],
                     fn=openalex_split,
@@ -201,6 +203,7 @@ class AuthorsPipeline(Pipeline):
                     params={"publications": self.outputof("publications")},
                 ),
             },
+            "csml": CsmlPipeline(),
         }
 
 
