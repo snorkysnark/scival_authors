@@ -3,6 +3,7 @@ import click
 from pathlib import Path
 from ralsei import (
     AddColumnsSql,
+    Column,
     CreateTableSql,
     MapToNewTable,
     Ralsei,
@@ -11,14 +12,20 @@ from ralsei import (
     ValueColumn,
     add_to_input,
     compose,
+    compose_one,
     folder,
     pop_id_fields,
 )
 from csv import DictReader
 
+from ralsei.task import MapToNewColumns
+from requests.sessions import Session, HTTPAdapter
+from urllib3.util import Retry
+
 from func.padded_csv import HeaderLength, header_length_arg, padded_csv_lines
 from func.field_map import authors_fields, publication_fields
 from func.split_authors import split_authors
+from func.openalex_download import openalex_download, openalex_split
 
 
 def check_null(value: Any):
@@ -36,6 +43,9 @@ def upload_csv(loc: tuple[Path, HeaderLength], keymap: dict[str, str]):
             }
 
 
+OPENALEX_PER_PAGE = 50
+
+
 @click.option("--authors", "-a", type=(Path, header_length_arg), required=True)
 @click.option("--publications", "-p", type=(Path, header_length_arg), required=True)
 class AuthorsPipeline(Pipeline):
@@ -48,6 +58,11 @@ class AuthorsPipeline(Pipeline):
         self.publications = publications
 
     def create_tasks(self):
+        session = Session()
+        adapter = HTTPAdapter(max_retries=Retry(total=5))
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         return {
             "authors_raw": MapToNewTable(
                 table=Table("work_authors_raw"),
@@ -139,6 +154,53 @@ class AuthorsPipeline(Pipeline):
                 sql=folder().joinpath("./func/rank_sum.sql").read_text(),
                 params={"pairs": self.outputof("rank_authors")},
             ),
+            "openalex_work_json": {
+                "group": CreateTableSql(
+                    sql=folder().joinpath("./func/group_dois.sql").read_text(),
+                    table=Table("openalex_queries"),
+                    params={
+                        "publications": self.outputof(
+                            "publication_authors.mark_with_external"
+                        ),
+                        "per_page": OPENALEX_PER_PAGE,
+                    },
+                ),
+                "download": MapToNewColumns(
+                    table=self.outputof("openalex_work_json.group"),
+                    select="SELECT query_id, dois FROM {{table}} WHERE NOT {{is_done}}",
+                    columns=[ValueColumn("json", "TEXT")],
+                    is_done_column="_downloaded",
+                    fn=compose_one(
+                        openalex_download,
+                        pop_id_fields("query_id"),
+                        add_to_input(per_page=OPENALEX_PER_PAGE),
+                        context={"sess": session},
+                    ),
+                ),
+                "split": MapToNewTable(
+                    source_table=self.outputof("openalex_work_json.download"),
+                    select="SELECT json AS json_str FROM {{source}}",
+                    table=Table("openalex_jsons"),
+                    columns=[
+                        ValueColumn("doi", "TEXT"),
+                        ValueColumn("json", "TEXT"),
+                    ],
+                    fn=openalex_split,
+                ),
+                "connect": AddColumnsSql(
+                    table=self.outputof("openalex_work_json.split"),
+                    columns=[
+                        Column("publication_id", "INT REFERENCES {{publications}}")
+                    ],
+                    sql="""\
+                    UPDATE {{table}} AS t
+                    SET publication_id = p.publication_id
+                    FROM {{publications}} AS p
+                    WHERE t.doi = p.doi
+                    """,
+                    params={"publications": self.outputof("publications")},
+                ),
+            },
         }
 
 
