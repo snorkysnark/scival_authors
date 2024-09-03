@@ -41,6 +41,8 @@ create table {{table}}
     collaboration                             text,
     title_record                              text,
     rank_sum INT,
+    qs_subject_area_field_name text,
+    qs_subject_field_name text,
 
     work_publication_id INT,
     work_openalex_id INT
@@ -70,7 +72,9 @@ INSERT INTO {{table}}(
     authors_count,
     title_record,
     work_publication_id,
-    rank_sum
+    rank_sum,
+    qs_subject_area_field_name,
+    qs_subject_field_name
 )
 SELECT
     1 as id_slice,
@@ -85,7 +89,9 @@ SELECT
     number_of_authors,
     title,
     publication_id,
-    rank_sum
+    rank_sum,
+    qs_subject_area_field_name,
+    qs_subject_field_name
 FROM {{publications}}
 
 {%split%}
