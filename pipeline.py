@@ -14,6 +14,7 @@ from ralsei import (
     compose,
     compose_one,
     folder,
+    into_many,
     pop_id_fields,
 )
 from csv import DictReader
@@ -25,7 +26,13 @@ from urllib3.util import Retry
 from func.padded_csv import HeaderLength, header_length_arg, padded_csv_lines
 from func.field_map import authors_fields, publication_fields
 from func.split_authors import split_authors
-from func.openalex_download import openalex_download, openalex_split
+from func.openalex_download import (
+    openalex_download,
+    openalex_split,
+    openalex_publication_parse,
+    openalex_authors_parse,
+    openalex_parse_affiliations,
+)
 from func.csml import CsmlPipeline
 
 
@@ -158,7 +165,7 @@ class AuthorsPipeline(Pipeline):
             "openalex_work_json": {
                 "group": CreateTableSql(
                     sql=folder().joinpath("./func/group_dois.sql").read_text(),
-                    table=Table("openalex_queries"),
+                    table=Table("work_openalex_queries"),
                     params={
                         "publications": self.outputof(
                             "publication_authors.mark_with_external"
@@ -181,10 +188,9 @@ class AuthorsPipeline(Pipeline):
                 "split": MapToNewTable(
                     source_table=self.outputof("openalex_work_json.download"),
                     select="SELECT json AS json_str FROM {{source}}",
-                    table=Table("openalex_jsons"),
+                    table=Table("work_openalex_jsons"),
                     columns=[
                         ValueColumn("doi", "TEXT"),
-                        ValueColumn("openalex", "TEXT"),
                         ValueColumn("json", "TEXT"),
                     ],
                     fn=openalex_split,
@@ -203,7 +209,79 @@ class AuthorsPipeline(Pipeline):
                     params={"publications": self.outputof("publications")},
                 ),
             },
-            "csml": CsmlPipeline(),
+            "openalex_publications": MapToNewTable(
+                source_table=self.outputof("openalex_work_json.connect"),
+                select="SELECT doi, json AS json_str FROM {{source}} WHERE publication_id IS NOT NULL GROUP BY doi",
+                table=Table("work_openalex_publications"),
+                columns=[
+                    "openalex_publication_id INTEGER PRIMARY KEY",
+                    ValueColumn("doi", "TEXT"),
+                    ValueColumn("openalex", "TEXT"),
+                    ValueColumn("authorships", "TEXT"),
+                ],
+                fn=compose(into_many(openalex_publication_parse), pop_id_fields("doi")),
+            ),
+            "openalex_publications_connect": AddColumnsSql(
+                table=self.outputof("openalex_work_json.connect"),
+                columns=[
+                    Column("openalex_publication_id", "INT REFERENCES {{publications}}")
+                ],
+                sql="""\
+                UPDATE {{table}} AS t
+                SET openalex_publication_id = p.openalex_publication_id
+                FROM {{publications}} AS p
+                WHERE t.doi = p.doi
+                """,
+                params={"publications": self.outputof("openalex_publications")},
+            ),
+            "openalex_authors_raw": MapToNewTable(
+                source_table=self.outputof("openalex_publications"),
+                select="SELECT openalex_publication_id, authorships AS json_str FROM {{source}}",
+                table=Table("work_openalex_authors_raw"),
+                columns=[
+                    ValueColumn("openalex_publication_id", "INT REFERENCES {{source}}"),
+                    ValueColumn("openalex", "TEXT"),
+                    ValueColumn("display_name", "TEXT"),
+                    ValueColumn("orcid", "TEXT"),
+                    ValueColumn("author_position", "TEXT"),
+                    ValueColumn("institutions", "TEXT"),
+                ],
+                fn=compose(
+                    openalex_authors_parse, pop_id_fields("openalex_publication_id")
+                ),
+            ),
+            "openalex_authors": CreateTableSql(
+                table=Table("work_openalex_authors"),
+                sql=folder().joinpath("./func/openalex_authors.sql").read_text(),
+                params={"raw": self.outputof("openalex_authors_raw")},
+            ),
+            "openalex_affiliations": MapToNewTable(
+                source_table=self.outputof("openalex_authors"),
+                select="SELECT openalex_author_id, institutions AS json_str FROM {{source}}",
+                table=Table("work_openalex_affiliations"),
+                columns=[
+                    ValueColumn("openalex_author_id", "INT REFERENCES {{source}}"),
+                    ValueColumn("afid", "TEXT"),
+                    ValueColumn("full_address", "TEXT"),
+                    ValueColumn("country_code", "TEXT"),
+                    ValueColumn("type_institutions", "TEXT"),
+                    ValueColumn("order_", "INT"),
+                ],
+                fn=compose(
+                    openalex_parse_affiliations, pop_id_fields("openalex_author_id")
+                ),
+            ),
+            "csml": CsmlPipeline(
+                publications=self.outputof("rank_sum"),
+                openalex_publications=self.outputof("openalex_publications"),
+                openalex_jsons=self.outputof("openalex_work_json.connect"),
+                authors=self.outputof("authors"),
+                external_authors=self.outputof("external_authors.create"),
+                publication_authors=self.outputof("publication_authors.connect"),
+                openalex_authors=self.outputof("openalex_authors"),
+                openalex_authors_raw=self.outputof("openalex_authors_raw"),
+                openalex_affiliations=self.outputof("openalex_affiliations"),
+            ),
         }
 
 

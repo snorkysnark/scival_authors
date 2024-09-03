@@ -39,7 +39,11 @@ create table {{table}}
     oa                                        text,
     international                             text,
     collaboration                             text,
-    title_record                              text
+    title_record                              text,
+    rank_sum INT,
+
+    work_publication_id INT,
+    work_openalex_id INT
 );
 {%split%}
 create index csml_record_id_slice_num_record_index
@@ -50,3 +54,53 @@ create index csml_record_id_slice_type_state_load_index
 {%split%}
 create index csml_record_id_slice_year_publ_source_type_index
     on {{table}} (id_slice, year_publ, source_type);
+
+{%split%}
+
+INSERT INTO {{table}}(
+    id_slice,
+    num_record,
+    type_database_record,
+    year_publ,
+    source_type,
+    source_title,
+    scopus_sourceid,
+    doi,
+    issn_norm,
+    authors_count,
+    title_record,
+    work_publication_id,
+    rank_sum
+)
+SELECT
+    1 as id_slice,
+    eid,
+    4 as type_database_record,
+    year,
+    source_type,
+    scopus_source_title,
+    source_id,
+    doi,
+    issn,
+    number_of_authors,
+    title,
+    publication_id,
+    rank_sum
+FROM {{publications}}
+
+{%split%}
+
+INSERT INTO {{table}}(
+    id_slice,
+    type_database_record,
+    num_record,
+    doi,
+    work_openalex_id
+)
+SELECT
+    10 as id_slice,
+    4 as type_database_record,
+    openalex,
+    doi,
+    openalex_publication_id
+FROM {{openalex}}
