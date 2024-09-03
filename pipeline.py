@@ -274,7 +274,7 @@ class AuthorsPipeline(Pipeline):
             "csml": CsmlPipeline(
                 publications=self.outputof("rank_sum"),
                 openalex_publications=self.outputof("openalex_publications"),
-                openalex_jsons=self.outputof("openalex_work_json.connect"),
+                openalex_jsons=self.outputof("openalex_publications_connect"),
                 authors=self.outputof("authors"),
                 external_authors=self.outputof("external_authors.create"),
                 publication_authors=self.outputof("publication_authors.connect"),
